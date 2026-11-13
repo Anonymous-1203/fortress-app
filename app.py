@@ -29,6 +29,30 @@ st.markdown("""
     }
 }
 
+@media (max-width: 768px) {
+    [data-testid="stDataFrame"],
+    .st-key-del_selected_btn,
+    .st-key-list_header_area,
+    .st-key-pc_search_area,
+    .st-key-pc_title_area {
+        display: none !important;
+    }
+
+    /* スマホ専用：スライダーのつまみ（丸）・バー・数値を大きくして操作しやすくする */
+    [data-testid="stSlider"] [role="slider"] {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    [data-testid="stSlider"] [data-baseweb="slider"] > div > div {
+        height: 8px !important;
+    }
+    [data-testid="stSliderTickBarMin"],
+    [data-testid="stSliderTickBarMax"],
+    [data-testid="stSliderThumbValue"] {
+        font-size: 16px !important;
+        font-weight: bold !important;
+    }
+}
 
 </style>
 """, unsafe_allow_html=True)
