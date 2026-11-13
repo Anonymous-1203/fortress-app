@@ -505,7 +505,7 @@ if stock_list:
         elif row['margin_of_safety_%'] >= 0:
             st.info("⚠️ **【利回り達成・指標確認】** 目標利回りに到達しています。⚠️/🚨の項目を確認してください。")
         else:
-            st.warning(f"⏳ **【要待機】** 目標株価まで あと {abs(row['diff_yen']):,} 円 ({abs(row['margin_of_safety_%'])}%) 下落を待ちます。")
+            st.warning(f"⏳ **【要待機】** 目標株価まで あと {abs(row['diff_yen']):,} 円 ({abs(row['margin_of_safety_%'])}%) 下落")
 
         # （既存の黄色い判定メッセージ：st.warning や st.success などのブロックの直下）
         st.write("")
