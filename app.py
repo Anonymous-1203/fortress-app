@@ -4,6 +4,7 @@ import yfinance as yf
 import unicodedata
 import json
 import os
+from datetime import datetime, timezone, timedelta 
 
 st.set_page_config(page_title="Fortress Value Investor", layout="wide")
 
@@ -27,6 +28,8 @@ st.markdown("""
         display: none !important;
     }
 }
+
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,6 +71,7 @@ if JAPANESE_MASTER is None:
     st.stop()
 
 JAPANESE_NAMES = {code: info["name"] if isinstance(info, dict) else info for code, info in JAPANESE_MASTER.items()}
+ALL_TICKER_OPTIONS = [f"{code} {name}" for code, name in sorted(JAPANESE_NAMES.items())]
 
 # --- セッション状態の初期化（URLパラメータ優先復元） ---
 if "watch_list" not in st.session_state:
@@ -147,12 +151,22 @@ def fetch_stock_data(ticker_code):
         payout_ratio = float(info.get("payoutRatio", 0) * 100) if info.get("payoutRatio") else 0.0
         current_yield = (dps / price * 100) if price > 0 else 0.0
 
+        # 株価の取得時刻（日本時間に変換）
+        jst = timezone(timedelta(hours=9))
+        market_ts = info.get("regularMarketTime")
+        if market_ts:
+            dt_jst = datetime.fromtimestamp(market_ts, tz=jst)
+        else:
+            dt_jst = datetime.now(jst)
+        price_time_str = f"{dt_jst.month}月{dt_jst.day}日 {dt_jst.strftime('%H:%M')}"
+
         return {
             "code": clean_code,
             "name": name,
             "sector": sector,
             "market": market,
             "price": float(price),
+            "price_time": price_time_str,
             "current_yield": round(current_yield, 2),
             "bps": float(bps),
             "dps": float(dps),
@@ -219,28 +233,45 @@ with col_detail:
 # 2. 右カラム上部：銘柄検索・追加（PC表示用）
 with col_list:
     with st.container(key="pc_search_area"):
-        search_query = st.text_input("🔍 銘柄検索・追加（企業名や4桁コードを入力）", key="search_query_input", placeholder="例: トヨタ / 7203")
+        def reset_pc_search():
+            st.session_state["pc_omni_search"] = None
 
-        if search_query:
-            found_candidates = search_ticker_candidates(search_query)
-            if found_candidates:
-                col_s1, col_s2 = st.columns([3, 1])
-                with col_s1:
-                    selected_cand = st.selectbox(f"👇 該当候補 ({len(found_candidates)}件) から選択", options=found_candidates, key="pc_cand_select")
-                with col_s2:
-                    st.write("")
-                    st.write("")
-                    is_full = len(st.session_state.watch_list) >= MAX_WATCH_LIST
-                    if st.button("➕ リストに追加", key="pc_add_btn", use_container_width=True, disabled=is_full):
-                        target_code = selected_cand.split(" ")[0]
-                        if target_code not in st.session_state.watch_list:
-                            st.session_state.watch_list.append(target_code)
-                            st.session_state.focused_code = target_code
-                            sync_url_params()
-                            st.success(f"追加しました: {selected_cand}")
-                            st.rerun()
-                if is_full:
-                    st.warning(f"⚠️ 監視リストの上限（{MAX_WATCH_LIST}銘柄）に達しています。不要な銘柄を削除してから追加してください。")
+        @st.dialog("銘柄の追加確認", on_dismiss=reset_pc_search)
+        def confirm_pc_add(target_code, target_label):
+            if target_code in st.session_state.watch_list:
+                st.info(f"**{target_label}** はすでに監視リストに登録されています。")
+                if st.button("閉じる", key="pc_close_dup", use_container_width=True):
+                    reset_pc_search()
+                    st.rerun()
+            else:
+                st.write(f"**{target_label}** を監視リストに追加しますか？")
+                col_a1, col_a2 = st.columns(2)
+                with col_a1:
+                    if st.button("追加する", key="pc_confirm_add", type="primary", use_container_width=True):
+                        st.session_state.watch_list.append(target_code)
+                        st.session_state.focused_code = target_code
+                        sync_url_params()
+                        reset_pc_search()
+                        st.rerun()
+                with col_a2:
+                    if st.button("キャンセル", key="pc_cancel_add", use_container_width=True):
+                        reset_pc_search()
+                        st.rerun()
+
+        is_full = len(st.session_state.watch_list) >= MAX_WATCH_LIST
+        pc_selected = st.selectbox(
+            "🔍 銘柄検索・追加（企業名や4桁コードを入力して選択）",
+            options=ALL_TICKER_OPTIONS,
+            index=None,
+            placeholder="例: トヨタ / 7203（入力すると候補が表示されます）",
+            key="pc_omni_search",
+            disabled=is_full
+        )
+        if is_full:
+            st.warning(f"⚠️ 監視リストの上限（{MAX_WATCH_LIST}銘柄）に達しています。")
+        elif pc_selected:
+            t_code = pc_selected.split(" ")[0]
+            confirm_pc_add(t_code, pc_selected)
 
 # 3. 全銘柄データの取得と計算
 stock_list = []
@@ -273,23 +304,42 @@ if stock_list:
         "name": "企業名",
         "sector": "業種",
         "price": "現在株価",
+        "final_target_price": "目標株価",
         "current_yield": "利回り(%)",
         "pbr": "PBR(倍)",
         "roe": "ROE(%)",
         "payout_ratio": "配当性向(%)",
-        "final_target_price": "ターゲット株価",
         "safety_display": "安全域乖離率"
     }
 
-    # 4. 右カラム下部：監視ターゲット一覧テーブル
+# 4. 右カラム下部：監視ターゲット一覧テーブル
     with col_list:
         display_cols = list(column_mapping.keys())
         display_df = df[display_cols].rename(columns=column_mapping)
 
+        # 「目標株価」列だけを強調表示するスタイル
+        def highlight_target_col(col):
+            if col.name == "目標株価":
+                return ["background-color: #fff1f2; color: #0f172a; font-weight: bold;" for _ in col]
+            return ["" for _ in col]
+
+        styled_df = (
+            display_df.style
+            .apply(highlight_target_col, axis=0)
+            .format({
+                "現在株価": "{:,.1f}円",
+                "目標株価": "{:,.1f}円",
+                "利回り(%)": "{:.2f}",
+                "PBR(倍)": "{:.2f}",
+                "ROE(%)": "{:.1f}",
+                "配当性向(%)": "{:.1f}",
+            })
+        )
+
         col_title, col_refresh_btn, col_del_btn = st.columns([2.0, 1.0, 1.0])
         with col_title:
             with st.container(key="list_header_area"):
-                st.subheader(f"📊 監視ターゲット一覧 ({len(display_df)} / {MAX_WATCH_LIST} 銘柄)")
+                st.subheader(f"📊 監視銘柄一覧 ({len(display_df)} / {MAX_WATCH_LIST} 銘柄)")
         with col_refresh_btn:
             st.write("")
             if st.button("🔄 株価を最新に更新", help="キャッシュをクリアして最新株価を再取得します（通常は15分ごとに自動更新）", use_container_width=True):
@@ -297,7 +347,7 @@ if stock_list:
                 st.rerun()
 
         event = st.dataframe(
-            display_df,
+            styled_df,
             height=550,
             use_container_width=True,
             hide_index=True,
@@ -324,7 +374,7 @@ if stock_list:
 
 # 5. 左カラム下部：銘柄詳細パネル
     with col_detail:
-        # スマホ専用：ドロップダウン切り替え＋削除ボタン
+        # スマホ専用：ドロップダウン切り替え＋確認ダイアログ付き削除ボタン
         with st.container(key="mobile_selector_area"):
             detail_options = [f"{r['code']} {r['name']}" for _, r in df.iterrows()]
             codes_list = df["code"].tolist()
@@ -332,6 +382,20 @@ if stock_list:
 
             def on_mobile_select_change():
                 st.session_state.focused_code = st.session_state.mobile_stock_select.split(" ")[0]
+
+            @st.dialog("銘柄の削除確認")
+            def confirm_mobile_delete(target_code, target_name):
+                st.write(f"**{target_code} {target_name}** を監視リストから削除しますか？")
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    if st.button("削除する", type="primary", use_container_width=True):
+                        st.session_state.watch_list = [c for c in st.session_state.watch_list if c != target_code]
+                        st.session_state.focused_code = st.session_state.watch_list[0]
+                        sync_url_params()
+                        st.rerun()
+                with col_c2:
+                    if st.button("キャンセル", use_container_width=True):
+                        st.rerun()
 
             col_sel, col_mdel = st.columns([4, 1])
             with col_sel:
@@ -345,28 +409,51 @@ if stock_list:
                 )
             with col_mdel:
                 if st.button("🗑️", key="mobile_del_btn", help="表示中の銘柄をリストから削除", disabled=len(st.session_state.watch_list) <= 1, use_container_width=True):
-                    st.session_state.watch_list = [c for c in st.session_state.watch_list if c != st.session_state.focused_code]
-                    st.session_state.focused_code = st.session_state.watch_list[0]
-                    sync_url_params()
-                    st.rerun()
+                    target_code = st.session_state.focused_code
+                    target_name = JAPANESE_NAMES.get(target_code, "")
+                    confirm_mobile_delete(target_code, target_name)
 
-        # スマホ専用：銘柄検索・追加エリア
+        # スマホ専用：インライン検索ドロップダウン＋確認ダイアログ付き追加
         with st.container(key="mobile_search_area"):
-            m_query = st.text_input("🔍 銘柄を追加（企業名 / 4桁コード）", key="mobile_search_input", placeholder="例: トヨタ / 7203")
-            if m_query:
-                m_cands = search_ticker_candidates(m_query)
-                if m_cands:
-                    m_sel = st.selectbox("候補を選択", options=m_cands, label_visibility="collapsed", key="mobile_cand_select")
-                    is_full = len(st.session_state.watch_list) >= MAX_WATCH_LIST
-                    if st.button("➕ この銘柄を追加", key="mobile_add_btn", use_container_width=True, disabled=is_full):
-                        target_code = m_sel.split(" ")[0]
-                        if target_code not in st.session_state.watch_list:
+            def reset_mobile_search():
+                st.session_state["mobile_omni_search"] = None
+
+            @st.dialog("銘柄の追加確認", on_dismiss=reset_mobile_search)
+            def confirm_mobile_add(target_code, target_label):
+                if target_code in st.session_state.watch_list:
+                    st.info(f"**{target_label}** はすでに監視リストに登録されています。")
+                    if st.button("閉じる", key="m_close_dup", use_container_width=True):
+                        reset_mobile_search()
+                        st.rerun()
+                else:
+                    st.write(f"**{target_label}** を監視リストに追加しますか？")
+                    col_a1, col_a2 = st.columns(2)
+                    with col_a1:
+                        if st.button("追加する", key="m_confirm_add", type="primary", use_container_width=True):
                             st.session_state.watch_list.append(target_code)
                             st.session_state.focused_code = target_code
                             sync_url_params()
+                            reset_mobile_search()
                             st.rerun()
-            st.divider()
+                    with col_a2:
+                        if st.button("キャンセル", key="m_cancel_add", use_container_width=True):
+                            reset_mobile_search()
+                            st.rerun()
 
+            is_full = len(st.session_state.watch_list) >= MAX_WATCH_LIST
+            m_selected = st.selectbox(
+                "🔍 銘柄を追加（企業名 / 4桁コード）",
+                options=ALL_TICKER_OPTIONS,
+                index=None,
+                placeholder="タップして企業名・コードを入力",
+                key="mobile_omni_search",
+                disabled=is_full
+            )
+            if m_selected:
+                t_code = m_selected.split(" ")[0]
+                confirm_mobile_add(t_code, m_selected)
+            st.divider()
+            
         matched_df = df[df["code"] == st.session_state.focused_code]
         row = matched_df.iloc[0] if not matched_df.empty else df.iloc[0]
 
@@ -376,19 +463,19 @@ if stock_list:
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            st.metric("現在株価", f"{int(row['price']):,} 円")
+            st.metric(f"現在株価 ({row['price_time']})", f"{int(row['price']):,} 円")
         with col_m2:
             st.metric("現在利回り", f"{row['current_yield']:.2f} %")
 
         with st.container(border=True):
-            st.metric("🎯 ターゲット株価", f"{row['final_target_price']:,} 円", delta=f"{row['diff_yen']:,} 円")
+            st.metric("🎯 目標株価", f"{row['final_target_price']:,} 円", delta=f"{row['diff_yen']:,} 円")
         
         st.write("📋 **財務・指標チェック:**")
         for sig in row["signals"]:
             st.markdown(sig)
             
         if row['dps'] <= 0:
-            st.info("⚪ **【無配銘柄】** 現在の年間配当予想が0円のため、ターゲット株価は算出対象外です。")
+            st.info("⚪ **【無配銘柄】** 現在の年間配当予想が0円のため、目標株価は算出対象外です。")
         elif row['margin_of_safety_%'] >= 0 and row['all_clear']:
             st.success("🏰 **【鉄壁の狙撃ゾーン】** 目標利回りに到達し、財務指標もすべて健全です。")
         elif row['margin_of_safety_%'] >= 0:
