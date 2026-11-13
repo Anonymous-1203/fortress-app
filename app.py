@@ -182,7 +182,42 @@ def fetch_stock_data(ticker_code):
         else:
             roe = 0.0
 
-        payout_ratio = float(info.get("payoutRatio", 0) * 100) if info.get("payoutRatio") else 0.0
+# --- 配当性向の算出と株式分割ズレ・異常値ガード ---
+        raw_payout = info.get("payoutRatio")
+        payout_ratio = round(float(raw_payout) * 100, 1) if raw_payout is not None else 0.0
+
+        # 1. 100%超え、または0%以下の異常値（株式分割ズレ等）なら、他の正常な指標から逆算を試みる
+        if payout_ratio <= 0 or payout_ratio > 100:
+            candidates = []
+            # 候補A: 株価 ÷ PER から逆算したEPS
+            per_val = info.get("forwardPE") or info.get("trailingPE") or 0
+            if per_val and 1.0 <= per_val <= 100.0 and price > 0 and dps > 0:
+                calc_eps_pe = price / per_val
+                if calc_eps_pe > 0:
+                    candidates.append(round((dps / calc_eps_pe) * 100, 1))
+
+            # 候補B: (株価 ÷ PBR) × ROE から逆算したEPS（PERが分割ズレしている場合に有効）
+            pbr_val = info.get("priceToBook") or 0
+            roe_raw = info.get("returnOnEquity") or 0
+            if pbr_val and pbr_val > 0 and roe_raw and roe_raw > 0 and price > 0 and dps > 0:
+                calc_eps_roe = (price / pbr_val) * roe_raw
+                if calc_eps_roe > 0:
+                    candidates.append(round((dps / calc_eps_roe) * 100, 1))
+
+            # 候補C: APIの forwardEps / trailingEps
+            eps_val = info.get("forwardEps") or info.get("trailingEps") or 0
+            if eps_val and eps_val > 0 and dps > 0:
+                candidates.append(round((dps / eps_val) * 100, 1))
+
+            # 10%〜100%の正常レンジに収まる候補があれば採用
+            valid = [c for c in candidates if 5.0 <= c <= 100.0]
+            if valid:
+                payout_ratio = valid[0]
+
+        # 2. それでも 150% を超える明らかなデータ異常値は 0.0（取得不可扱い）にする
+        if payout_ratio > 150 or payout_ratio < 0:
+            payout_ratio = 0.0
+
         current_yield = (dps / price * 100) if price > 0 else 0.0
 
         # 株価の取得時刻（日本時間に変換）
@@ -561,17 +596,17 @@ if stock_list:
                 return ["" for _ in col]
 
             styled_df = (
-                display_df.style
-                .apply(highlight_target_col, axis=0)
-                .format({
-                    "現在株価": "{:,.1f}円",
-                    target_col_label: "{:,.1f}円",
-                    "利回り(%)": "{:.2f}",
-                    "PBR(倍)": "{:.2f}",
-                    "ROE(%)": "{:.1f}",
-                    "配当性向(%)": "{:.1f}",
-                })
-            )
+            display_df.style
+            .apply(highlight_target_col, axis=0)
+            .format({
+                "現在株価": "{:,.1f}円",
+                target_col_label: lambda x: f"{x:,.1f}円" if pd.notna(x) and x > 0 else "--",
+                "利回り(%)": lambda x: f"{x:.2f}" if pd.notna(x) and x > 0 else "--",
+                "PBR(倍)": lambda x: f"{x:.2f}" if pd.notna(x) and x > 0 else "--",
+                "ROE(%)": "{:.1f}",
+                "配当性向(%)": lambda x: f"{x:.1f}" if pd.notna(x) and x > 0 else "--",
+            })
+        )
 
             col_title, col_refresh_btn, col_del_btn = st.columns([2.0, 1.0, 1.0])
             with col_title:
