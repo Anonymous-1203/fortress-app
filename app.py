@@ -40,8 +40,8 @@ st.markdown("""
 
     /* スマホ専用：スライダーのつまみ（丸）・バー・数値を大きくして操作しやすくする */
     [data-testid="stSlider"] [role="slider"] {
-        width: 28px !important;
-        height: 28px !important;
+        width: 32px !important;
+        height: 32px !important;
     }
     [data-testid="stSlider"] [data-baseweb="slider"] > div > div {
         height: 8px !important;
