@@ -519,5 +519,36 @@ if stock_list:
         with col_link3:
             st.link_button("IR BANK", f"https://irbank.net/{code_str}", use_container_width=True)
 
+        # AI購入相談プロンプト自動生成エリア
+        st.write("")
+        with st.expander("🤖 AI にこの銘柄の購入相談をする"):
+            st.caption("下の枠の右上のコピーボタンを押し、GeminiやChatGPTに貼り付けて相談できます。")
+            ai_prompt = f"""あなたは日本株の高配当・バリュー投資に精通したシニアアナリストです。
+以下の銘柄について、現在の指標と私の目標条件をもとに、購入の妥当性・減配リスク・今後の注目ポイントを客観的に分析してください。
+
+【対象銘柄】
+・銘柄：{row['code']} {row['name']}（{row['sector']} / {row['market']}）
+・現在株価：{int(row['price']):,} 円（{row['price_time']}時点）
+・現在配当利回り：{row['current_yield']:.2f} %（年間配当予想：{row['dps']} 円）
+・私の目標利回り（YOC）：{target_yoc:.1f} %
+・目標株価：{row['final_target_price']:,} 円（現在株価との乖離：{row['diff_yen']:,} 円 / {row['margin_of_safety_%']}%）
+
+【財務・健全性指標】
+・PBR：{row['pbr']:.2f} 倍
+・ROE：{row['roe']:.1f} %
+・配当性向：{row['payout_ratio']:.1f} %
+
+【相談したいこと】
+1. 現在の業績トレンドや事業環境を踏まえた「減配リスク・業績悪化リスク」の評価
+2. PBR・ROE・配当性向のバランスから見た「割安性と財務の健全性」
+3. 目標利回り {target_yoc:.1f}%（{row['final_target_price']:,}円）まで待つべきか、現水準での打診買いも検討すべきかの戦略提案"""
+
+            st.code(ai_prompt, language=None)
+            col_ai1, col_ai2 = st.columns(2)
+            with col_ai1:
+                st.link_button("✨ Gemini を開いて相談", "https://gemini.google.com/app", use_container_width=True)
+            with col_ai2:
+                st.link_button("💬 ChatGPT を開いて相談", "https://chatgpt.com/", use_container_width=True)
+
 st.divider()
 st.caption("※ 本ツールの財務・配当データは外部API（Yahoo! Finance）を参照しているため、株式分割や決算発表の反映ラグ等により国内証券会社の予想値と差異が生じる場合があります。最終的な投資判断・発注の際は、必ず証券会社の最新情報をご確認ください。")
