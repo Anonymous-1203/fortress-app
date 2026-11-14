@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 st.set_page_config(page_title="Fortress Value Investor", layout="wide")
 
-st.title("◆株式投資 高配当シミュレーター β版◆")
+st.title("◆株式投資 高配当シミュレーター β版")
 st.write("")
 
 st.markdown("""
@@ -356,7 +356,7 @@ if stock_list:
                 selected = st.session_state.get("mobile_stock_select")
                 if selected:
                     st.session_state.focused_code = selected.split(" ")[0]
-                    
+
             @st.dialog("銘柄の削除確認")
             def confirm_mobile_delete(target_code, target_name):
                 st.write(f"**{target_code} {target_name}** を監視リストから削除しますか？")
