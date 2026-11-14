@@ -4,9 +4,13 @@ import yfinance as yf
 import unicodedata
 import json
 import os
+import re
 from datetime import datetime, timezone, timedelta 
 
 st.set_page_config(page_title="Fortress Value Investor", layout="wide")
+
+def is_valid_ticker(code_str):
+    return bool(re.match(r"^[0-9A-Za-z]{4}$", str(code_str).strip()))
 
 st.title("◆株式投資 高配当シミュレーター β版")
 st.write("")
