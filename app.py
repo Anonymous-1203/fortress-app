@@ -353,8 +353,10 @@ if stock_list:
             current_idx = codes_list.index(st.session_state.focused_code) if st.session_state.focused_code in codes_list else 0
 
             def on_mobile_select_change():
-                st.session_state.focused_code = st.session_state.mobile_stock_select.split(" ")[0]
-
+                selected = st.session_state.get("mobile_stock_select")
+                if selected:
+                    st.session_state.focused_code = selected.split(" ")[0]
+                    
             @st.dialog("銘柄の削除確認")
             def confirm_mobile_delete(target_code, target_name):
                 st.write(f"**{target_code} {target_name}** を監視リストから削除しますか？")
