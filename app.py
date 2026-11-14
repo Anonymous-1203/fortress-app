@@ -110,7 +110,7 @@ def sync_url_params():
 # --- セッション状態の初期化（URLパラメータ優先復元） ---
 if "watch_list" not in st.session_state:
     if "codes" in st.query_params:
-        parsed = [c.strip() for c in st.query_params["codes"].split(",") if c.strip().isdigit() and len(c.strip()) == 4]
+        parsed = [c.strip().upper() for c in st.query_params["codes"].split(",") if is_valid_ticker(c)]
         unique_codes = list(dict.fromkeys(parsed))[:MAX_WATCH_LIST]
         st.session_state.watch_list = unique_codes if unique_codes else list(DEFAULT_WATCH_LIST)
     else:
@@ -136,16 +136,17 @@ def search_ticker_candidates(query_str):
     if not norm_query:
         return []
     
+    upper_query = norm_query.upper()
     candidates = {}
-    if norm_query.isdigit() and len(norm_query) == 4:
-        name = JAPANESE_NAMES.get(norm_query, f"東証銘柄 {norm_query}")
-        candidates[norm_query] = f"{norm_query} {name}"
+    if is_valid_ticker(upper_query) and upper_query in JAPANESE_NAMES:
+        name = JAPANESE_NAMES[upper_query]
+        candidates[upper_query] = f"{upper_query} {name}"
         return list(candidates.values())
 
     count = 0
     for code, name in JAPANESE_NAMES.items():
         norm_name = normalize_text(name)
-        if norm_query in norm_name or norm_query in code:
+        if norm_query in norm_name or upper_query in code.upper():
             candidates[code] = f"{code} {name}"
             count += 1
             if count >= 30:
